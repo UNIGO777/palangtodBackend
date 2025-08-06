@@ -10,11 +10,11 @@ const productSchema = new mongoose.Schema({
   price: {
     type: Number,
     required: true,
-    default: 999
+    default: 998
   },
   discount: {
     type: Number,
-    default: 60
+    default: 55
   },
   description: {
     type: String,
@@ -46,8 +46,8 @@ productSchema.statics.getDefaultProduct = async function() {
   // Create default product if it doesn't exist
   const newProduct = await this.create({
     name: 'Neelkanth Palangtod Capsules',
-    price: 999,
-    discount: 50,
+    price: 998,
+    discount: 55,
     description: 'Ayurvedic Strength Enhancement',
     active: true
   });
