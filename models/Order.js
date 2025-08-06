@@ -120,12 +120,14 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Indexes for better query performance
-orderSchema.index({ orderId: 1 });
+orderSchema.index({ orderId: 1 }, { unique: true }); // Unique index for faster lookups
 orderSchema.index({ 'customer.email': 1 });
 orderSchema.index({ 'customer.phone': 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ orderDate: -1 });
 orderSchema.index({ 'payment.status': 1 });
+orderSchema.index({ 'payment.razorpayOrderId': 1 }); // For payment verification
+orderSchema.index({ 'emailSent.customer': 1, 'emailSent.admin': 1 }); // For email tracking
 
 // Virtual for formatted order date
 orderSchema.virtual('formattedOrderDate').get(function() {

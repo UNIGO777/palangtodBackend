@@ -250,6 +250,7 @@ class PaymentService {
       
       return {
         success: true,
+        paymentStatus: 'completed',
         message: 'Payment verified and order updated successfully',
         order
       };

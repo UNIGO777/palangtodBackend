@@ -85,7 +85,7 @@ class CronService {
                 razorpay_payment_id: paymentDetails.paymentId
               });
               
-              if (updateResult.success) {
+              if (updateResult.success && updateResult.paymentStatus === 'completed') {
                 // Send all confirmation emails sequentially
                 if (!order.emailSent.customer) {
                   console.log(`🔄 Cron job - sending emails for abandoned payment order: ${order.orderId}`);

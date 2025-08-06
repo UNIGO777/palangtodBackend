@@ -14,7 +14,7 @@ const productSchema = new mongoose.Schema({
   },
   discount: {
     type: Number,
-    default: 50
+    default: 60
   },
   description: {
     type: String,
@@ -28,21 +28,38 @@ const productSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Static method to get default product
+// Add index for faster queries on active products
+productSchema.index({ active: 1 });
+
+// Static method to get default product (optimized with lean and projection)
 productSchema.statics.getDefaultProduct = async function() {
-  const defaultProduct = await this.findOne({ active: true });
+  // Use lean() for faster queries and select only needed fields
+  const defaultProduct = await this.findOne(
+    { active: true }, 
+    { name: 1, price: 1, discount: 1, description: 1 }
+  ).lean();
+  
   if (defaultProduct) {
     return defaultProduct;
   }
 
   // Create default product if it doesn't exist
-  return this.create({
+  const newProduct = await this.create({
     name: 'Neelkanth Palangtod Capsules',
     price: 999,
     discount: 50,
     description: 'Ayurvedic Strength Enhancement',
     active: true
   });
+  
+  // Return lean version for consistency
+  return {
+    _id: newProduct._id,
+    name: newProduct.name,
+    price: newProduct.price,
+    discount: newProduct.discount,
+    description: newProduct.description
+  };
 };
 
 module.exports = mongoose.model('Product', productSchema); 

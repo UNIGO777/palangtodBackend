@@ -11,6 +11,7 @@ const {
 } = require('../middleware/validation');
 const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
+const taskQueue = require('../services/taskQueueService');
 const config = require('../config');
 
 // Create new order
@@ -59,15 +60,22 @@ router.post('/create', sanitizeInput, validateOrderCreation, async (req, res) =>
     }
 
     await order.save();
+    
+    // Prepare response data immediately for faster response
+    const responseData = {
+      orderId: order.orderId,
+      totalAmount: order.totalAmount,
+      razorpayOrderId: order.payment.razorpayOrderId,
+      status: order.status
+    };
 
     // 🐛 DEBUG: Check order before email sending
     console.log('🔍 ORDER CHECK - Before email sending:');
     console.log('Order ID:', order.orderId);
     console.log('Payment method:', order.payment.method);
     console.log('Order status:', order.status);
-    console.log('Has formattedOrderDate:', !!order.formattedOrderDate);
     
-    // Add formattedOrderDate if missing (common issue!)
+    // Add formattedOrderDate if missing (for email templates)
     if (!order.formattedOrderDate) {
       order.formattedOrderDate = new Date(order.orderDate).toLocaleDateString('en-IN');
       console.log('🔧 Added missing formattedOrderDate:', order.formattedOrderDate);
@@ -76,32 +84,42 @@ router.post('/create', sanitizeInput, validateOrderCreation, async (req, res) =>
     // Send emails asynchronously (non-blocking) - Only for Cash on Delivery
     // For online payments, emails will be sent after payment verification
     if (order.payment.method === 'cod') {
-      console.log('✅ COD Order - starting email sequence...');
+      console.log('✅ COD Order - queuing email tasks in background...');
       
-      // Start email sending tasks without waiting for them to complete
+      // Queue email sending tasks in background for immediate response
+      taskQueue.addTask(
+        emailService.sendCustomerOrderConfirmation,
+        'Customer Order Confirmation',
+        order,
+        taskQueue.createTaskOptions(2, 3000) // 2 retries, 3s delay
+      );
       
-      emailService.sendAdminOrderNotification(order);
-      emailService.sendCustomerOrderConfirmation(order);
+      taskQueue.addTask(
+        emailService.sendAdminOrderNotification,
+        'Admin Order Notification',
+        order,
+        taskQueue.createTaskOptions(2, 3000)
+      );
       
-     
+      taskQueue.addTask(
+        emailService.sendNewOrderNotification,
+        'Personal Order Notification',
+        order,
+        config.admin.notificationEmail,
+        taskQueue.createTaskOptions(2, 5000)
+      );
       
-    
-      
-      console.log('✅ COD Order created, all 3 emails queued for sending in background');
+      console.log('✅ COD Order created, 3 email tasks queued for background processing');
     } else {
       console.log('ℹ️  Online payment order created, emails will be sent after payment verification');
       console.log('   Payment method was:', order.payment.method);
     }
 
+    // Send response immediately for better user experience
     res.status(201).json({
       success: true,
       message: 'Order created successfully',
-      data: {
-        orderId: order.orderId,
-        totalAmount: order.totalAmount,
-        razorpayOrderId: order.payment.razorpayOrderId,
-        status: order.status
-      }
+      data: responseData
     });
 
   } catch (error) {
@@ -142,38 +160,39 @@ router.post('/verify-payment', sanitizeInput, validatePaymentVerification, async
       });
     }
 
-    // Send confirmation emails for verified online payments (sequentially)
-    if (!order.emailSent.customer) {
-      console.log('💳 Online payment verified - starting sequential email sending...');
+    // Send confirmation emails for verified online payments (background processing)
+    if (!order.emailSent.customer && updateResult.paymentStatus === 'completed') {
+      console.log('💳 Online payment verified - queuing email tasks in background...');
       
-      try {
-        // Send emails one by one for verified online payment
-        console.log('📧 1. Sending customer confirmation...');
-        await emailService.sendCustomerOrderConfirmation(order);
-        console.log('✅ Customer email sent');
-        
-        console.log('📧 2. Sending admin notification...');
-        await emailService.sendAdminOrderNotification(order);
-        console.log('✅ Admin email sent');
-        
-        console.log('📧 3. Sending personal notification to:', config.admin.notificationEmail);
-        await emailService.sendNewOrderNotification(order, config.admin.notificationEmail);
-        console.log('✅ Personal notification email sent');
-        
-        // Update email sent flag after all emails are sent
-        order.emailSent.customer = true;
-        order.emailSent.admin = true;
-        await order.save();
-        
-        console.log('🎉 Online payment verified, all 3 emails sent successfully!');
-      } catch (emailError) {
-        console.error('❌ Email sending error:', emailError.message);
-        // Still update flags to avoid retrying failed emails
-        order.emailSent.customer = true;
-        order.emailSent.admin = true;
-        await order.save();
-        console.log('⚠️  Payment verified but some emails may have failed');
-      }
+      // Mark emails as sent to prevent duplicate processing
+      order.emailSent.customer = true;
+      order.emailSent.admin = true;
+      await order.save();
+      
+      // Queue email sending tasks in background for immediate response
+      taskQueue.addTask(
+        emailService.sendCustomerOrderConfirmation,
+        'Customer Order Confirmation (Payment Verified)',
+        order,
+        taskQueue.createTaskOptions(3, 2000) // 3 retries, 2s delay
+      );
+      
+      taskQueue.addTask(
+        emailService.sendAdminOrderNotification,
+        'Admin Order Notification (Payment Verified)',
+        order,
+        taskQueue.createTaskOptions(3, 2000)
+      );
+      
+      taskQueue.addTask(
+        emailService.sendNewOrderNotification,
+        'Personal Order Notification (Payment Verified)',
+        order,
+        config.admin.notificationEmail,
+        taskQueue.createTaskOptions(3, 3000)
+      );
+      
+      console.log('🎉 Online payment verified, 3 email tasks queued for background processing!');
     } else {
       console.log('Payment verified, but emails already sent for this order');
     }

@@ -54,15 +54,31 @@ const clearAllCache = () => {
 // Performance monitoring middleware
 const performanceMonitor = (req, res, next) => {
   const start = process.hrtime();
+  const startTime = Date.now();
+
+  // Add request start time to response headers for debugging
+  res.set('X-Request-Start', startTime.toString());
 
   // Once the response is finished, calculate and log the time taken
   res.on('finish', () => {
     const end = process.hrtime(start);
     const time = (end[0] * 1000 + end[1] / 1000000).toFixed(2);
     
-    // Log requests that take more than 200ms
-    if (time > 200) {
-      console.warn(`SLOW REQUEST: ${req.method} ${req.originalUrl} took ${time}ms`);
+    // Add response time to headers
+    res.set('X-Response-Time', `${time}ms`);
+    
+    // Color-coded logging based on response time
+    if (time > 1000) {
+      console.error(`🔴 VERY SLOW REQUEST: ${req.method} ${req.originalUrl} took ${time}ms`);
+    } else if (time > 500) {
+      console.warn(`🟡 SLOW REQUEST: ${req.method} ${req.originalUrl} took ${time}ms`);
+    } else if (time > 200) {
+      console.log(`🟠 MODERATE REQUEST: ${req.method} ${req.originalUrl} took ${time}ms`);
+    } else {
+      // Only log fast requests in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🟢 FAST REQUEST: ${req.method} ${req.originalUrl} took ${time}ms`);
+      }
     }
   });
 
